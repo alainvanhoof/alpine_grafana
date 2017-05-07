@@ -1,0 +1,105 @@
+---
+# tasks file for alpine_grafana
+
+- name: Install packages needed
+  apk:
+    name: "{{ item }}"
+    state: present
+    update_cache: yes
+  with_items:
+      - ca-certificates
+      - alpine-sdk
+      - go
+      - nodejs
+
+- name: Create /opt/grafana
+  file:
+     dest: /opt/grafana
+     state: directory
+     mode: 0755  
+      
+- name: Get Go {{ go_version }} source
+  unarchive:
+      src: https://golang.org/dl/go{{ go_version }}.src.tar.gz
+      dest: /opt
+      remote_src: True
+      creates: /opt/go
+          
+- name: Patch the source of Go {{ go_version }}
+  patch:
+     src: no-pic.patch
+     basedir: /opt/go/
+     strip: 1
+     
+- name: Build Go {{ go_version }}
+  command: >
+      ./make.bash
+      chdir=/opt/go/src 
+      creates=/opt/go/bin/go
+  environment:
+      GOROOT_BOOTSTRAP: /usr/lib/go
+
+- name: Remove go package to avoid confusion
+  apk:
+      name: go
+      state: absent
+
+- name: Create symlink to /usr/bin
+  file:
+    src: /opt/go/bin/go
+    dest: /usr/bin/go
+    state: link
+
+- name: Get Grafana
+  command: >
+      go get github.com/grafana/grafana
+      chdir=/opt/grafana
+      creates=/opt/grafana/src/github.com/grafana
+  ignore_errors: yes
+  environment:
+      GOROOT: /opt/go
+      GOPATH: /opt/grafana
+      
+- name: Setup the Build of Grafana
+  command: >
+      go run build.go setup
+      chdir=/opt/grafana/src/github.com/grafana/grafana
+  environment:
+      GOROOT: /opt/go
+      GOPATH: /opt/grafana
+
+- name: Build Grafana
+  command: >
+      go run build.go build
+      chdir=/opt/grafana/src/github.com/grafana/grafana
+  environment:
+      GOROOT: /opt/go
+      GOPATH: /opt/grafana
+
+- name: Build Frontend of Grafana
+  command: >
+      {{ item }}
+      chdir=/opt/grafana/src/github.com/grafana/grafana
+  with_items: 
+      - npm install -g yarn
+      - yarn install --pure-lockfile
+      - npm install -g grunt-cli
+      - grunt
+
+- name: Install init.d
+  copy:
+     src: grafana.init.d
+     dest: /etc/init.d/grafana
+     mode: 0755
+    
+- name: Install conf.d
+  copy:
+     src: grafana.conf.d
+     dest: /etc/conf.d/grafana
+     mode: 0440
+     
+- name: Start Grafana
+  service:
+      name: grafana
+      state: started
+      enabled: true
