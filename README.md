@@ -1,7 +1,7 @@
 Role Name
 =========
 
-This role creates a running and compiled from source Grafana instance.
+This role creates a running Grafana instance.
 
 Requirements
 ------------
